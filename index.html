@@ -1,0 +1,200 @@
+<html>
+<script src="bower_components/jsbn/jsbn.js"></script>
+<script src="bower_components/jsbn/jsbn2.js"></script>
+<script src="bower_components/sjcl/sjcl.js"></script>
+<script src="bower_components/moment/moment.js"></script>
+<script src="aws-cognito-sdk.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<script src="amazon-cognito-identity.min.js"></script>
+<script src="bower_components/aws-sdk/dist/aws-sdk.js"></script>
+
+<script type="text/javascript" src="apiGateway/lib/axios/dist/axios.standalone.js"></script>
+<script type="text/javascript" src="apiGateway/lib/CryptoJS/rollups/hmac-sha256.js"></script>
+<script type="text/javascript" src="apiGateway/lib/CryptoJS/rollups/sha256.js"></script>
+<script type="text/javascript" src="apiGateway/lib/CryptoJS/components/hmac.js"></script>
+<script type="text/javascript" src="apiGateway/lib/CryptoJS/components/enc-base64.js"></script>
+<script type="text/javascript" src="apiGateway/lib/url-template/url-template.js"></script>
+<script type="text/javascript" src="apiGateway/lib/apiGatewayCore/sigV4Client.js"></script>
+<script type="text/javascript" src="apiGateway/lib/apiGatewayCore/apiGatewayClient.js"></script>
+<script type="text/javascript" src="apiGateway/lib/apiGatewayCore/simpleHttpClient.js"></script>
+<script type="text/javascript" src="apiGateway/lib/apiGatewayCore/utils.js"></script>
+<script type="text/javascript" src="apiGateway/apigClient.js"></script>
+<style>
+
+.fixed {
+	border-width: 1; 
+	border-style: solid; 
+	border-color: gray; 
+	background-color: #EDEDED; 
+	font-family: monospace;
+}
+</style>
+<body>
+<p>Username</p>
+<input id="username" type="text">
+<p>Password</p>
+<input id="passwd" type="password">
+<input type="button" onclick="login();" value="Login">
+<input type="button" onclick="federatedLogin();" value="Federated Login">
+<p>API Gateway endpoint</p>
+<input id="api_endpoint" type="text">
+<input type="button" onclick="invokeApi();" value="Invoke">
+<input type="button" onclick="invokeApiAWS();" value="Invoke AWS IAM">
+<p>Result</p>
+<div id="results" class="fixed">
+</div>
+<p>Access token</p>
+<div id="access" class="fixed">
+</div>
+<p>Identity token</p>
+<div id="identity" class="fixed">
+</div>
+<script>
+	var identityToken;
+	var login = function() {
+	
+	var authenticationData = {
+		Username : $('#username').val(),
+		Password : $('#passwd').val()
+	};
+	var authenticationDetails = new AWSCognito.CognitoIdentityServiceProvider.AuthenticationDetails(authenticationData);
+	var poolData = { UserPoolId : 'eu-west-1_lO5s6lY6r',
+		ClientId : '70r2it1p6t27m9pjncfo91vhi5'
+	};
+	var userPool = new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
+	var userData = {
+		Username : $('#username').val(),
+
+		Pool : userPool
+	};
+	var cognitoUser = new AWSCognito.CognitoIdentityServiceProvider.CognitoUser(userData);
+
+	cognitoUser.authenticateUser(authenticationDetails, {
+		onSuccess: function (result) {
+			console.log('access token + ' + result.getAccessToken().getJwtToken());
+			$('#access').html(result.getAccessToken().getJwtToken());
+			/*Use the idToken for Logins Map when Federating User Pools with Cognito Identity or when passing through an Authorization Header to an API Gateway Authorizer*/
+			identityToken = result.idToken.jwtToken;
+			console.log('idToken + ' + identityToken);
+			$('#identity').html(identityToken);
+
+		},
+
+		onFailure: function(err) {
+			alert(err);
+		},
+
+		newPasswordRequired: function(userAttributes, requiredAttributes) {
+			// User was signed up by an admin and must provide new 
+			// password and required attributes, if any, to complete 
+			// authentication.
+
+			// the api doesn't accept this field back
+			delete userAttributes.email_verified;
+
+			// Get these details and call 
+			cognitoUser.completeNewPasswordChallenge('test3done', userAttributes, this);
+		}
+
+	});
+}
+var accessKeyId;
+var secretAccessKey;
+var sessionToken;
+var federatedLogin = function() {
+	var authenticationData = {
+		Username : $('#username').val(),
+		Password : $('#passwd').val()
+	};
+	var authenticationDetails = new AWSCognito.CognitoIdentityServiceProvider.AuthenticationDetails(authenticationData);
+	var poolData = { 
+		UserPoolId : 'eu-west-1_lO5s6lY6r',
+		ClientId : '70r2it1p6t27m9pjncfo91vhi5'
+	};
+	var userPool = new AWSCognito.CognitoIdentityServiceProvider.CognitoUserPool(poolData);
+	var userData = {
+		Username : $('#username').val(),
+		Pool : userPool
+	};
+	var cognitoUser = new AWSCognito.CognitoIdentityServiceProvider.CognitoUser(userData);
+	cognitoUser.authenticateUser(authenticationDetails, {
+		onSuccess: function (result) {
+			console.log('access token + ' + result.getAccessToken().getJwtToken());
+			AWS.config.region = 'eu-west-1';
+			AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+				IdentityPoolId : 'eu-west-1:2219dd43-3558-42eb-aa02-302203d45237', // your identity pool id here
+				Logins : {
+					// Change the key below according to the specific region your user pool is in.
+					'cognito-idp.eu-west-1.amazonaws.com/eu-west-1_lO5s6lY6r' : result.getIdToken().getJwtToken()
+				}
+			});
+
+			AWS.config.credentials.get(function() {
+				accessKeyId = AWS.config.credentials.accessKeyId;
+				secretAccessKey = AWS.config.credentials.secretAccessKey;
+				sessionToken = AWS.config.credentials.sessionToken;
+				console.log('access key + '+accessKeyId);
+				console.log('secret access key + '+secretAccessKey);
+				console.log('session token + '+sessionToken);
+			});
+			// Instantiate aws sdk service objects now that the credentials have been updated.
+			// example: var s3 = new AWS.S3();
+
+		},
+
+		onFailure: function(err) {
+			alert(err);
+		},
+
+	});
+
+
+	// AWS.config.region = 'eu-west-1';
+	// AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+ //    	IdentityPoolId: 'eu-west-1:2219dd43-3558-42eb-aa02-302203d45237'
+	// });
+
+	// AWS.config.credentials.get(function() {
+	// 	accessKeyId = AWS.config.credentials.accessKeyId;
+ //    	secretAccessKey = AWS.config.credentials.secretAccessKey;
+ //    	sessionToken = AWS.config.credentials.sessionToken;
+ //    	console.log('access key + '+accessKeyId);
+ //    	console.log('secret access key + '+secretAccessKey);
+ //    	console.log('session token + '+sessionToken);
+	// });
+
+}
+var invokeApi = function() {
+		$("#results").html('');
+		$.ajax({
+			url: $('#api_endpoint').val(),
+			headers: { "Authorization" : identityToken}
+		}).done(function( html ) {
+		$("#results").append( html );
+  });
+}
+
+var invokeApiAWS = function() {
+	$("#results").html('');
+	var apigClient = apigClientFactory.newClient( {
+		accessKey: accessKeyId,
+		secretKey: secretAccessKey,
+		sessionToken: sessionToken, //OPTIONAL: If you are using temporary credentials you must include the session token
+		region: 'eu-west-1'
+	});
+	var params = {};
+	var body = {};
+	var additionalParams = {};
+	apigClient.privateGet(params, body, additionalParams)
+	.then(function(result){
+		console.log("result + "+result.data);
+		$("#results").append( result.data );
+	}).catch( function(result){
+		alert(result.data);
+	});
+
+}
+
+</script>
+</body>
+</html>

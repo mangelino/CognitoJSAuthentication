@@ -1,0 +1,21 @@
+{
+  "name": "cognito",
+  "description": "",
+  "main": "",
+  "license": "MIT",
+  "homepage": "",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "aws-sdk": "^2.10.0",
+    "jsbn": "^1.3.0",
+    "moment": "^2.17.1",
+    "sjcl": "^1.0.6"
+  }
+}
